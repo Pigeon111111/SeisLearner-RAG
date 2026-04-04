@@ -38,7 +38,7 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
       {argPreview && (
         <>
           <span className="text-gray-400">·</span>
-          <span className="text-gray-500 truncate max-w-[200px]">{argPreview}</span>
+          <span className="text-gray-500 truncate max-w-[120px] sm:max-w-[200px]">{argPreview}</span>
         </>
       )}
     </div>
@@ -146,7 +146,7 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold">
                       {cite.index}
                     </span>
-                    <span className="text-gray-800 font-medium truncate max-w-[200px]">
+                    <span className="text-gray-800 font-medium truncate max-w-[120px] sm:max-w-[200px]">
                       {cite.source}
                     </span>
                     <span className="text-gray-400">·</span>
@@ -279,7 +279,7 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
   return (
     <div 
       ref={scrollContainerRef}
-      className="flex-1 px-16 pt-4 overflow-y-scroll"
+      className="flex-1 px-4 sm:px-6 lg:px-16 pt-4 overflow-y-scroll"
     >
       {messages.map((message) => {
         return (
@@ -317,7 +317,7 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
             {/* Tool 消息 - 简洁展示，不使用气泡 */}
             {message.role === "tool" && message.metadata?.toolResponse && (
               <div className="flex justify-start">
-                <div className="max-w-[85%]">
+                <div className="max-w-[85%] sm:max-w-[85%] lg:max-w-[85%]">
                   <ToolResponseDisplay toolResponse={message.metadata.toolResponse} />
                 </div>
               </div>
