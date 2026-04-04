@@ -1,0 +1,65 @@
+# RAG系统评估配置
+
+evaluation:
+  name: "SeisLearner RAG系统评估"
+  version: "1.0"
+  created_date: "2026-03-31"
+  
+  # 数据集配置
+  dataset:
+    questions_file: "questions.json"
+    knowledge_base_file: "seismic_exploration_knowledge.md"
+    reference_answers_file: "reference_answers.json"
+    
+  # RAGAs评估服务配置
+  ragas_service:
+    host: "localhost"
+    port: 8001
+    endpoint: "/evaluate"
+    timeout_seconds: 30
+    
+  # 评估指标配置
+  metrics:
+    retrieval:
+      - "context_precision"
+      - "context_recall"
+      - "context_entity_recall"
+    
+    generation:
+      - "faithfulness"
+      - "answer_relevancy"
+      - "answer_similarity"  # 需要标准答案
+    
+    optional:
+      - "factual_correctness"  # 需要标准答案
+  
+  # 评估参数
+  parameters:
+    retrieval_top_k: 5        # 检索返回的文档数量
+    max_retrieval_depth: 3    # 最大递归检索深度
+    similarity_threshold: 0.7  # 相似度阈值
+    
+  # 定期评估任务配置
+  scheduled_evaluation:
+    enabled: true
+    cron_expression: "0 0 2 * * ?"  # 每天凌晨2点
+    batch_size: 5                   # 每次评估的问题数量
+    save_results: true
+    generate_report: true
+    
+  # 报告生成配置
+  reporting:
+    format: ["html", "json"]
+    output_dir: "evaluation_results"
+    include_charts: true
+    include_details: true
+    
+  # 性能监控
+  monitoring:
+    log_level: "INFO"
+    save_logs: true
+    alert_thresholds:
+      context_precision: 0.6
+      context_recall: 0.5
+      faithfulness: 0.7
+      answer_relevancy: 0.6

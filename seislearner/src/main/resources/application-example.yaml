@@ -1,0 +1,45 @@
+# =============================================================
+# SeisLearner 配置文件示例
+# 复制此文件为 application.yaml 并填入你的实际密钥
+# cp application-example.yaml application.yaml
+# =============================================================
+
+spring:
+  application:
+    name: seislearner
+  datasource:
+    url: jdbc:postgresql://localhost:5434/seislearner
+    username: postgres
+    password: YOUR_DB_PASSWORD          # <-- 替换为你的数据库密码
+    driver-class-name: org.postgresql.Driver
+  ai:
+    deepseek:
+      api-key: YOUR_DEEPSEEK_API_KEY    # <-- 从 https://platform.deepseek.com 获取
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+    zhipuai:
+      api-key: YOUR_ZHIPUAI_API_KEY     # <-- 可选，从 https://open.bigmodel.cn 获取
+      base-url: https://open.bigmodel.cn/api/paas
+      chat:
+        options:
+          model: glm-4.6
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+
+mybatis:
+  type-aliases-package: seislearner.model.entity
+  mapper-locations: classpath:mapper/*.xml
+  type-handlers-package: seislearner.typehandler
+
+document:
+  storage:
+    base-path: ./data/documents
+
+# 阿里云 DashScope API（用于 Embedding 和 Rerank）
+dashscope:
+  api-key: YOUR_DASHSCOPE_API_KEY      # <-- 从 https://dashscope.console.aliyun.com 获取
+  base-url: https://dashscope.aliyuncs.com

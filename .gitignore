@@ -1,0 +1,66 @@
+# === Java / Maven ===
+*.class
+*.jar
+*.war
+*.ear
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.settings/
+.project
+.classpath
+.factorypath
+
+# === Node.js / Frontend ===
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# === Logs ===
+*.log
+logs/
+_boot_*.log
+_server_*.log
+_mineru_*.log
+
+# === Temp / Build output ===
+_test_output.txt
+build_output.txt
+err.txt
+res.txt
+ui/build_result.txt
+seislearner/build_output.txt
+seislearner/compile_result.txt
+seislearner/run_result.txt
+seislearner/run_result2.txt
+seislearner/startup_log.txt
+
+# === Runtime Data ===
+seislearner/data/documents/
+data/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Env / Secrets ===
+.env
+.env.*
+!.env.example
+application-local.yaml
+# application.yaml contains real API keys, use application-example.yaml instead
+seislearner/src/main/resources/application.yaml
+
+# === WorkBuddy (internal tool state) ===
+.workbuddy/

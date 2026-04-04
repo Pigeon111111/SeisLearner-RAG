@@ -1,0 +1,163 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="seislearner.mapper.ChunkBgeM3Mapper">
+
+    <resultMap id="BaseResultMap" type="seislearner.model.entity.ChunkBgeM3">
+        <id property="id" column="id" jdbcType="VARCHAR"/>
+        <result property="kbId" column="kb_id" jdbcType="VARCHAR"/>
+        <result property="docId" column="doc_id" jdbcType="VARCHAR"/>
+        <result property="content" column="content" jdbcType="VARCHAR"/>
+        <result property="metadata" column="metadata" jdbcType="VARCHAR"/>
+        <result property="embedding" column="embedding" jdbcType="OTHER"/>
+        <result property="startOffset" column="start_offset" jdbcType="INTEGER"/>
+        <result property="endOffset" column="end_offset" jdbcType="INTEGER"/>
+        <result property="parentChunkId" column="parent_chunk_id" jdbcType="VARCHAR"/>
+        <result property="imageReferences" column="image_references" jdbcType="VARCHAR"/>
+        <result property="createdAt" column="created_at" jdbcType="TIMESTAMP"/>
+        <result property="updatedAt" column="updated_at" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,kb_id,doc_id,
+        content,metadata,embedding,
+        start_offset,end_offset,parent_chunk_id,image_references,
+        created_at,updated_at
+    </sql>
+
+    <insert id="insert" parameterType="seislearner.model.entity.ChunkBgeM3"
+            keyColumn="id" keyProperty="id" useGeneratedKeys="true">
+        INSERT INTO chunk_bge_m3
+        (kb_id,
+         doc_id,
+         content,
+         metadata,
+         embedding,
+         start_offset,
+         end_offset,
+         parent_chunk_id,
+         image_references,
+         created_at,
+         updated_at)
+        VALUES (CAST(#{kbId} AS uuid),
+                CAST(#{docId} AS uuid),
+                #{content},
+                #{metadata}::jsonb,
+                #{embedding}::vector,
+                #{startOffset},
+                #{endOffset},
+                CAST(#{parentChunkId} AS uuid),
+                #{imageReferences}::jsonb,
+                #{createdAt},
+                #{updatedAt})
+    </insert>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT id,
+               kb_id,
+               doc_id,
+               content,
+               metadata,
+               embedding,
+               start_offset,
+               end_offset,
+               parent_chunk_id,
+               image_references,
+               created_at,
+               updated_at
+        FROM chunk_bge_m3
+        WHERE id = CAST(#{id} AS uuid)
+    </select>
+
+    <delete id="deleteById">
+        DELETE
+        FROM chunk_bge_m3
+        WHERE id = CAST(#{id} AS uuid)
+    </delete>
+
+    <delete id="deleteByDocId">
+        DELETE FROM chunk_bge_m3 WHERE doc_id = CAST(#{docId} AS uuid)
+    </delete>
+
+    <delete id="deleteByKbId">
+        DELETE FROM chunk_bge_m3 WHERE kb_id = CAST(#{kbId} AS uuid)
+    </delete>
+
+    <update id="updateById" parameterType="seislearner.model.entity.ChunkBgeM3">
+        UPDATE chunk_bge_m3
+        <set>
+            <if test="kbId != null">
+                kb_id = CAST(#{kbId} AS uuid),
+            </if>
+            <if test="docId != null">
+                doc_id = CAST(#{docId} AS uuid),
+            </if>
+            <if test="content != null">
+                content = #{content},
+            </if>
+            <if test="metadata != null">
+                metadata = #{metadata}::jsonb,
+            </if>
+            <if test="embedding != null">
+                embedding = #{embedding}::vector,
+            </if>
+            <if test="startOffset != null">
+                start_offset = #{startOffset},
+            </if>
+            <if test="endOffset != null">
+                end_offset = #{endOffset},
+            </if>
+            <if test="parentChunkId != null">
+                parent_chunk_id = CAST(#{parentChunkId} AS uuid),
+            </if>
+            <if test="imageReferences != null">
+                image_references = #{imageReferences}::jsonb,
+            </if>
+            updated_at = NOW()
+        </set>
+        WHERE id = CAST(#{id} AS uuid)
+    </update>
+
+    <select id="similaritySearch" resultMap="BaseResultMap">
+        <![CDATA[
+        SELECT id,
+               kb_id,
+               doc_id,
+               content,
+               metadata,
+               embedding,
+               start_offset,
+               end_offset,
+               parent_chunk_id,
+               image_references,
+               created_at,
+               updated_at
+        FROM chunk_bge_m3
+        WHERE kb_id = CAST(#{kbId} AS uuid)
+        ORDER BY embedding <=> #{vectorLiteral}::vector
+        LIMIT #{limit}
+        ]]>
+    </select>
+
+    <!--
+        全文检索：基于 PostgreSQL tsvector 的稀疏检索
+        使用 'simple' 配置（不进行词干提取）
+        #{tsquery} 由 Java 端构造为 OR 格式，例如 '地震 | 波速 | 运动学'
+        ts_rank_cd 计算排名分数（覆盖密度算法，类似 BM25）
+    -->
+    <select id="fullTextSearch" resultType="java.util.Map">
+        SELECT id::text       AS "chunkId",
+               doc_id::text   AS "docId",
+               content,
+               ts_rank_cd(
+                   to_tsvector('simple', content),
+                   #{tsquery}::tsquery
+               )              AS "rank"
+        FROM chunk_bge_m3
+        WHERE kb_id = CAST(#{kbId} AS uuid)
+          AND to_tsvector('simple', content) @@ #{tsquery}::tsquery
+        ORDER BY "rank" DESC
+        LIMIT #{limit}
+    </select>
+</mapper>
