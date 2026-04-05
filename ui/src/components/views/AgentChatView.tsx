@@ -137,7 +137,9 @@ const AgentChatView: React.FC = () => {
       const message = JSON.parse(event.data) as SseMessage;
       if (message.type === "AI_GENERATED_CONTENT") {
         // 将 AI 生成的内容存到 messages 中
-        addMessage(message.payload.message);
+        if (message.payload.message) {
+          addMessage(message.payload.message);
+        }
       } else if (message.type === "AI_PLANNING") {
         setDisplayAgentStatus(true);
         setAgentStatusText(message.payload.statusText);

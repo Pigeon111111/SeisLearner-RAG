@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Card, Space, Typography, Select, message } from "antd";
+import { Card, Space, Typography, Select, message as antdMessage } from "antd";
 import {
   BulbOutlined,
   MessageOutlined,
@@ -155,11 +155,11 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
           <Sender
             onSubmit={async () => {
               if (!effectiveAgentId) {
-                message.warning("请先创建一个智能体助手");
+                antdMessage.warning("请先创建一个智能体助手");
                 return;
               }
               if (!message.trim()) {
-                message.warning("请输入消息内容");
+                antdMessage.warning("请输入消息内容");
                 return;
               }
 
@@ -189,7 +189,7 @@ const EmptyAgentChatView: React.FC<DefaultAgentChatViewProps> = ({
               } catch (error) {
                 console.error("发送消息失败:", error);
                 const errMsg = error instanceof Error ? error.message : "未知错误";
-                message.error(`发送失败: ${errMsg}`);
+                antdMessage.error(`发送失败: ${errMsg}`);
               }
             }}
             value={message}

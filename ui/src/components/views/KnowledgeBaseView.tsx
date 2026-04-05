@@ -17,9 +17,6 @@ import {
   UploadOutlined,
   DeleteOutlined,
   FileOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LoadingOutlined,
 } from "@ant-design/icons";
 import type { UploadProps } from "antd";
 import { useKnowledgeBases } from "../../hooks/useKnowledgeBases.ts";
@@ -34,7 +31,6 @@ const KnowledgeBaseView: React.FC = () => {
   const { documents, loading, refreshDocuments, deleteDocument } =
     useDocuments(knowledgeBaseId);
 
-  const [uploading, setUploading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; fileName: string } | null>(null);
 
   // 查找当前知识库的详细信息
@@ -227,12 +223,10 @@ const KnowledgeBaseView: React.FC = () => {
               onChange={handleUploadChange}
               multiple
               showUploadList={{
-                showProgress: true,
                 showRemoveIcon: true,
                 showPreviewIcon: false,
               }}
               accept=".md,.pdf,.ppt,.pptx,.jpg,.jpeg,.png,.txt,.doc,.docx"
-              disabled={uploading}
             >
               <Button
                 type="primary"
