@@ -66,7 +66,6 @@ const EvaluationView: React.FC = () => {
   const [serviceStatus, setServiceStatus] = useState<"checking" | "online" | "offline">("checking");
   const [result, setResult] = useState<EvaluationResult | null>(null);
 
-  // QA评估
   const [qaPairs, setQaPairs] = useState<QAPair[]>([
     { id: "1", question: "", answer: "", groundTruth: "", contexts: [] }
   ]);
@@ -76,7 +75,6 @@ const EvaluationView: React.FC = () => {
     "answer_correctness",
   ]);
 
-  // 文档评估
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [docQuestions, setDocQuestions] = useState<string[]>([]);
 
@@ -307,7 +305,7 @@ const EvaluationView: React.FC = () => {
   };
 
   const QAPanel = () => (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-y-auto pr-2" style={{ maxHeight: "calc(100vh - 320px)" }}>
       <Alert
         message="问答对评估"
         description="输入问题、RAG系统生成的答案、参考答案（标准答案）和检索到的上下文，系统将计算各项评估指标。"
@@ -433,7 +431,7 @@ const EvaluationView: React.FC = () => {
   );
 
   const DocPanel = () => (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-y-auto pr-2" style={{ maxHeight: "calc(100vh - 320px)" }}>
       <Alert
         message="文档评估"
         description="上传文档后，系统将自动提取问题并进行RAG评估。支持 PDF、Word、Markdown 等格式。"
@@ -550,7 +548,7 @@ const EvaluationView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      <div className="flex-1 overflow-hidden p-6 bg-gray-50">
         {serviceStatus === "offline" && (
           <Alert
             message="评估服务离线"
@@ -572,7 +570,7 @@ const EvaluationView: React.FC = () => {
           activeKey={activeTab}
           onChange={setActiveTab}
           items={tabItems}
-          className="bg-white p-4 rounded-lg shadow-sm"
+          className="bg-white p-4 rounded-lg shadow-sm h-full [&_.ant-tabs-content]:h-full [&_.ant-tabs-tabpane]:h-full"
         />
       </div>
     </div>
