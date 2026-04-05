@@ -146,8 +146,26 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
                       </>
                     )}
                   </div>
-                  <div className="text-gray-600 pl-7 whitespace-pre-wrap break-words leading-relaxed max-h-32 overflow-y-auto">
-                    {cite.content}
+                  <div className="text-gray-600 pl-7 whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto">
+                    <XMarkdown
+                      streaming={{ enableAnimation: false, hasNextChunk: true }}
+                      components={{
+                        img: ({ src, alt, ...imgProps }: { src?: string; alt?: string; [key: string]: unknown }) => (
+                          <img 
+                            src={src || ''} 
+                            alt={alt || ''} 
+                            className="max-w-full h-auto rounded-lg my-1 cursor-pointer hover:opacity-90 transition-opacity max-h-40"
+                            loading="lazy"
+                            onClick={() => {
+                              if (src) window.open(src, '_blank');
+                            }}
+                            {...imgProps as React.ImgHTMLAttributes<HTMLImageElement>}
+                          />
+                        ),
+                      }}
+                    >
+                      {cite.content}
+                    </XMarkdown>
                   </div>
                 </div>
               ))}
