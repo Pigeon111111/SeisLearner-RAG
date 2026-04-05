@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """
-MinerU API 服务包装器 - 官方在线API版 (v2.1)
+MinerU API 服务包装器 - 官方在线API版 (v2.2)
 ============================================
 调用 MinerU 官方在线 API (https://mineru.net) 进行文档解析，
 不再依赖本地 Docker 容器或 GPU。
 
+v2.2 新增：PDF图片提取功能
+- 从PDF中提取图片并保存到本地
+- 在Markdown中嵌入图片路径
+- 支持静态文件访问
+
 三级解析策略（按优先级）：
 1. Token 精准解析 API（/api/v4/extract/task）— 需登录注册获取Token，高质量公式/表格/OCR
 2. Agent 轻量 API（/api/v1/agent/parse/file）— 免登录、IP 限频
-3. PyMuPDF 本地降级 — 毫秒级 PDF 解析，无网络依赖
+3. PyMuPDF 本地降级 — 毫秒级 PDF 解析，无网络依赖，支持图片提取
 
 环境变量：
 - MINERU_API_TOKEN: MinerU 官方 Token（从 https://mineru.net 用户中心获取）
 - MINERU_USE_LOCAL: 设为 "true" 强制使用本地 PyMuPDF 模式
 - MINERU_HOST: 监听地址（默认 0.0.0.0）
 - MINERU_PORT: 监听端口（默认 8000）
+- MINERU_IMAGE_DIR: 图片存储目录（默认 ./extracted_images）
 """
 
 import os
@@ -23,9 +29,13 @@ import json
 import time
 import tempfile
 import logging
-from typing import List, Optional
+import hashlib
+import base64
+from typing import List, Optional, Tuple
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import httpx
@@ -43,20 +53,27 @@ MINERU_TOKEN = os.getenv("MINERU_API_TOKEN", "")
 FORCE_LOCAL = os.getenv("MINERU_USE_LOCAL", "").lower() in ("true", "1", "yes")
 USE_ONLINE_API = bool(MINERU_TOKEN) and not FORCE_LOCAL
 
+# 图片存储目录
+IMAGE_DIR = Path(os.getenv("MINERU_IMAGE_DIR", "./extracted_images"))
+IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+
 # ============== 尝试导入PyMuPDF（第三级降级）============
 try:
     import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
-    logger.info("PyMuPDF 可用 (第三级降级模式)")
+    logger.info("PyMuPDF 可用 (第三级降级模式，支持图片提取)")
 except ImportError:
     PYMUPDF_AVAILABLE = False
 
 # ============== 应用状态 ==============
 app = FastAPI(
     title="MinerU API 服务 (在线版)",
-    description="通过 MinerU 官方在线 API 提供文档解析服务，支持 PDF/图片/DOCX/PPTX",
-    version="2.1.0"
+    description="通过 MinerU 官方在线 API 提供文档解析服务，支持 PDF/图片/DOCX/PPTX，支持图片提取",
+    version="2.2.0"
 )
+
+# 挂载静态文件目录，用于访问提取的图片
+app.mount("/images", StaticFiles(directory=str(IMAGE_DIR)), name="images")
 
 
 # ============== 数据模型 ==============
@@ -67,6 +84,7 @@ class ParseRequest(BaseModel):
     table_enable: bool = True
     return_md: bool = True
     return_middle_json: bool = False
+    extract_images: bool = True  # 是否提取图片
 
 
 class ParseResponse(BaseModel):
@@ -76,73 +94,149 @@ class ParseResponse(BaseModel):
     markdown_content: Optional[str] = None
     middle_json: Optional[dict] = None
     error: Optional[str] = None
+    images: Optional[List[dict]] = None  # 提取的图片列表
 
 
-# ============== 核心解析函数 ==============
+# ============== 图片提取函数 ==============
 
-def parse_pdf_with_pymupdf(pdf_path: str) -> str:
+def extract_images_from_pdf(pdf_path: str, doc_id: str) -> Tuple[List[dict], dict]:
+    """
+    从PDF中提取所有图片并保存到本地
+    
+    Args:
+        pdf_path: PDF文件路径
+        doc_id: 文档ID，用于组织图片目录
+        
+    Returns:
+        Tuple[List[dict], dict]: (图片信息列表, 图片路径映射 {page_num: [image_paths]})
+    """
+    doc = fitz.open(pdf_path)
+    images_info = []
+    image_map = {}  # page_num -> [image_paths]
+    
+    # 为该文档创建独立目录
+    doc_image_dir = IMAGE_DIR / doc_id
+    doc_image_dir.mkdir(parents=True, exist_ok=True)
+    
+    for page_num in range(doc.page_count):
+        page = doc[page_num]
+        image_list = page.get_images(full=True)
+        page_images = []
+        
+        for img_index, img in enumerate(image_list):
+            try:
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                
+                if base_image is None:
+                    continue
+                    
+                image_bytes = base_image["image"]
+                image_ext = base_image["ext"]
+                
+                # 过滤太小的图片（可能是图标、装饰元素）
+                if len(image_bytes) < 1024:  # 小于1KB
+                    continue
+                
+                # 生成唯一文件名
+                image_hash = hashlib.md5(image_bytes).hexdigest()[:12]
+                image_filename = f"page{page_num + 1}_img{img_index + 1}_{image_hash}.{image_ext}"
+                image_path = doc_image_dir / image_filename
+                
+                # 保存图片
+                with open(image_path, "wb") as f:
+                    f.write(image_bytes)
+                
+                # 记录图片信息
+                image_url = f"/images/{doc_id}/{image_filename}"
+                image_info = {
+                    "filename": image_filename,
+                    "url": image_url,
+                    "page": page_num + 1,
+                    "index": img_index + 1,
+                    "size": len(image_bytes),
+                    "ext": image_ext,
+                }
+                images_info.append(image_info)
+                page_images.append(image_url)
+                
+                logger.debug(f"提取图片: page={page_num + 1}, index={img_index + 1}, size={len(image_bytes)}")
+                
+            except Exception as e:
+                logger.warning(f"提取图片失败: page={page_num + 1}, index={img_index + 1}, error={e}")
+                continue
+        
+        if page_images:
+            image_map[page_num + 1] = page_images
+    
+    doc.close()
+    
+    logger.info(f"从PDF提取图片完成: doc_id={doc_id}, 总图片数={len(images_info)}")
+    return images_info, image_map
+
+
+def parse_pdf_with_pymupdf(pdf_path: str, doc_id: str = None, extract_images: bool = True) -> dict:
     """
     第三级降级：使用 PyMuPDF(fitz) 快速解析 PDF 为 Markdown
     - 速度: 毫秒级（普通 PDF < 1 秒）
     - 无需网络、无需 GPU
+    - 支持图片提取
     - 不支持公式识别和 OCR
-    - 仅限 PDF 格式
     
-    v2.2 改进：优先使用 get_text("text") 提取纯文本（更好的中文编码支持），
-    仅当需要检测图片位置时才回退到 dict 模式。
+    v2.2 改进：
+    - 提取图片并保存到本地
+    - 在Markdown中嵌入图片链接
     """
+    if doc_id is None:
+        doc_id = hashlib.md5(pdf_path.encode()).hexdigest()[:12]
+    
     doc = fitz.open(pdf_path)
     md_parts = []
     md_parts.append(f"# {os.path.basename(pdf_path)}\n")
 
     total_chars = 0
+    images_info = []
+    image_map = {}
+    
+    # 提取图片
+    if extract_images:
+        try:
+            images_info, image_map = extract_images_from_pdf(pdf_path, doc_id)
+        except Exception as e:
+            logger.warning(f"图片提取失败: {e}")
 
     for page_num, page in enumerate(doc):
+        page_number = page_num + 1
+        
         if page_num > 0:
             md_parts.append("\n---\n")
-        md_parts.append(f"## 第 {page_num + 1} 页\n")
+        md_parts.append(f"## 第 {page_number} 页\n")
 
-        # 策略A：优先用 get_text("text") 获取原始文本流（最佳中文兼容性）
+        # 提取文本
         raw_text = page.get_text("text", flags=fitz.TEXT_PRESERVE_WHITESPACE | fitz.TEXT_MEDIABOX_CLIP)
         
         if raw_text and raw_text.strip():
-            # 清理文本：去除多余空白行，保留段落结构
             lines = [l.rstrip() for l in raw_text.split("\n") if l.strip()]
             if lines:
                 md_parts.append("\n".join(lines) + "\n")
                 total_chars += sum(len(l) for l in lines)
 
-        # 策略B：检测图片块位置（补充标注）
-        try:
-            blocks = page.get_text("dict")["blocks"]
-            image_count = 0
-            for block in blocks:
-                if "image" in block:
-                    bbox = block["bbox"]
-                    # 过滤掉太小的图片（可能是图标/装饰元素）
-                    w = int(bbox[2] - bbox[0])
-                    h = int(bbox[3] - bbox[1])
-                    if w > 50 and h > 50:
-                        md_parts.append(
-                            f"[图片 (位置: x={int(bbox[0])}, y={int(bbox[1])}, "
-                            f"w={w}, h={h})]\n"
-                        )
-                        image_count += 1
-        except Exception:
-            pass  # 图片检测失败不影响主流程
+        # 添加该页的图片
+        if page_number in image_map:
+            md_parts.append("\n### 本页图片\n")
+            for img_url in image_map[page_number]:
+                md_parts.append(f"\n![图片]({img_url})\n")
 
     page_count = doc.page_count
     doc.close()
 
     result = "\n".join(md_parts)
     
-    # 日志：报告提取质量
     logger.info(
         f"[PyMuPDF] 解析完成: {page_count}页, "
-        f"有效文字约{total_chars}字符, 总输出{len(result)}字符"
+        f"有效文字约{total_chars}字符, 提取图片{len(images_info)}张, 总输出{len(result)}字符"
     )
     
-    # 如果提取的文字极少，可能是扫描件或特殊编码PDF
     if total_chars < 20:
         logger.warning(
             f"[PyMuPDF] 文字提取过少({total_chars}字符)，"
@@ -150,7 +244,10 @@ def parse_pdf_with_pymupdf(pdf_path: str) -> str:
             f"建议配置 MINERU_API_TOKEN 启用OCR解析。"
         )
 
-    return result
+    return {
+        "markdown_content": result,
+        "images": images_info,
+    }
 
 
 async def parse_with_token_api(file_path: str, filename: str,
@@ -159,35 +256,13 @@ async def parse_with_token_api(file_path: str, filename: str,
                                 is_ocr: bool = False) -> dict:
     """
     第一级：调用 MinerU Token 精准解析 API (/api/v4/extract/task)
-
-    需要用户在 mineru.net 注册并获取 Token。
-    支持公式识别、表格结构化提取、OCR 等高级功能。
-    每天 2000 页免费额度。
-
-    流程：
-    1. POST /api/v4/extract/task 创建任务 → 获取上传 URL + task_id
-    2. PUT 上传文件到 OSS 临时 URL
-    3. GET /api/v4/extract/task/{task_id} 轮询结果
-    4. 返回 Markdown 内容
-
-    Args:
-        file_path: 本地文件路径
-        filename: 原始文件名
-        formula_enable: 是否启用公式识别
-        table_enable: 是否启用表格识别
-        is_ocr: 是否启用 OCR
-
-    Returns:
-        dict: 包含 status, message, markdown_content 的字典
-    Raises:
-        Exception: API 调用失败时抛出异常（由上层捕获后降级）
     """
     headers = {
         "Authorization": f"Bearer {MINERU_TOKEN}",
     }
 
     async with httpx.AsyncClient(timeout=120.0) as client:
-        # === Step 1: 创建任务，获取上传 URL + task_id ===
+        # Step 1: 创建任务
         logger.info(f"[Token API v4] Step 1: 创建解析任务 - {filename}")
         create_resp = await client.post(
             f"{MINERU_API_BASE}/v4/extract/task",
@@ -211,26 +286,21 @@ async def parse_with_token_api(file_path: str, filename: str,
 
         task_id = create_result["data"]["task_id"]
         upload_url = create_result["data"].get("file_url", "")
-        logger.info(f"[Token API v4] task_id={task_id}, upload_url={'yes' if upload_url else 'N/A'}")
+        logger.info(f"[Token API v4] task_id={task_id}")
 
-        # === Step 2: 上传文件 ===
+        # Step 2: 上传文件
         if upload_url:
-            logger.info(f"[Token API v4] Step 2: 上传文件 ({os.path.getsize(file_path)} bytes)")
+            logger.info(f"[Token API v4] Step 2: 上传文件")
             with open(file_path, "rb") as f:
                 file_data = f.read()
-
             upload_resp = await client.put(upload_url, content=file_data)
             if upload_resp.status_code not in (200, 201):
                 raise Exception(f"[Token API] 文件上传失败: HTTP {upload_resp.status_code}")
 
-            logger.info("[Token API v4] 文件上传成功")
-        else:
-            logger.warning("[Token API v4] 未收到上传 URL，可能直接进入处理队列")
-
-        # === Step 3: 轮询任务结果 ===
+        # Step 3: 轮询结果
         logger.info(f"[Token API v4] Step 3: 轮询结果...")
-        max_attempts = 60   # 最多等 2 分钟
-        poll_interval = 2  # 每 2 秒查一次
+        max_attempts = 60
+        poll_interval = 2
         markdown_content = None
         state = ""
 
@@ -247,10 +317,8 @@ async def parse_with_token_api(file_path: str, filename: str,
             logger.info(f"[Token API v4] 轮询 #{attempt}: state={state}")
 
             if state == "done":
-                # Token API 可能直接返回 content 或提供下载 URL
                 data = query_result.get("data", {})
                 markdown_content = data.get("markdown_content") or data.get("md_content", "")
-                # 如果没有内容但有URL，尝试下载
                 if not markdown_content:
                     md_url = data.get("markdown_url") or data.get("md_url", "")
                     if md_url:
@@ -258,17 +326,13 @@ async def parse_with_token_api(file_path: str, filename: str,
                         if dl_resp.status_code == 200:
                             markdown_content = dl_resp.text
                 break
-            elif state == "failed":
+            elif state in ("failed", "error"):
                 err_msg = query_result.get("data", {}).get("error_message", "") or \
                           query_result.get("data", {}).get("message", "未知错误")
                 raise Exception(f"[Token API] 解析任务失败: {err_msg}")
-            elif state == "error":
-                raise Exception(f"[Token API] 解析任务出错: {query_result.get('data', {})}")
 
         if state != "done":
-            raise Exception(
-                f"[Token API] 解析超时（已等待 {max_attempts * poll_interval}s），最后状态: {state}"
-            )
+            raise Exception(f"[Token API] 解析超时，最后状态: {state}")
 
         if not markdown_content:
             raise Exception("[Token API] 解析完成但未获取到 Markdown 内容")
@@ -279,6 +343,7 @@ async def parse_with_token_api(file_path: str, filename: str,
             "status": "success",
             "message": f"文档解析成功(MinerU Token精准API v4)",
             "markdown_content": markdown_content,
+            "images": [],  # Token API 不返回图片，需要本地提取
         }
 
 
@@ -288,18 +353,9 @@ async def parse_with_agent_api(file_path: str, filename: str,
                                  is_ocr: bool = False) -> dict:
     """
     第二级：Agent 轻量解析 API (/api/v1/agent/parse/file)
-
-    免登录、IP 限频。无需 Token 即可使用。
-    适合非 PDF 格式或 Token 未配置时的中间降级方案。
-
-    流程与 Token API 类似但端点不同：
-    1. POST /api/v1/agent/parse/file → 获取上传 URL + task_id
-    2. PUT 上传文件
-    3. GET /api/v1/agent/parse/{task_id} 轮询结果
-    4. 下载 Markdown 结果
     """
     async with httpx.AsyncClient(timeout=120.0) as client:
-        # === Step 1: 申请上传 ===
+        # Step 1: 申请上传
         logger.info(f"[Agent API v1] Step 1: 申请文件上传 - {filename}")
         apply_resp = await client.post(
             f"{MINERU_API_BASE}/v1/agent/parse/file",
@@ -309,35 +365,28 @@ async def parse_with_agent_api(file_path: str, filename: str,
                 "enable_formula": formula_enable,
                 "enable_table": table_enable,
                 "is_ocr": is_ocr,
-                # Agent 免登录 API 限制20页，page_range 格式如 "1-10" 或 "1-20"
                 "page_range": "1-20",
             }
         )
         apply_result = apply_resp.json()
 
         if apply_result.get("code") != 0:
-            raise Exception(
-                f"[Agent API] 申请上传失败: {apply_result.get('msg', 'unknown error')} "
-                f"(code: {apply_result.get('code')})"
-            )
+            raise Exception(f"[Agent API] 申请上传失败: {apply_result.get('msg', 'unknown error')}")
 
         task_id = apply_result["data"]["task_id"]
         upload_url = apply_result["data"].get("file_url", "")
-        logger.info(f"[Agent API v1] task_id={task_id}, upload_url={'yes' if upload_url else 'N/A'}")
+        logger.info(f"[Agent API v1] task_id={task_id}")
 
-        # === Step 2: 上传文件 ===
+        # Step 2: 上传文件
         if upload_url:
-            logger.info(f"[Agent API v1] Step 2: 上传文件 ({os.path.getsize(file_path)} bytes)")
+            logger.info(f"[Agent API v1] Step 2: 上传文件")
             with open(file_path, "rb") as f:
                 file_data = f.read()
             upload_resp = await client.put(upload_url, content=file_data)
             if upload_resp.status_code not in (200, 201):
-                raise Exception(f"[Agent API] 文件上传失败: HTTP {upload_resp.status_code}")
-            logger.info("[Agent API v1] 文件上传成功")
-        else:
-            logger.warning("[Agent API v1] 未收到上传 URL")
+                raise Exception(f"[Agent API] 文件上传失败")
 
-        # === Step 3: 轮询结果 ===
+        # Step 3: 轮询结果
         logger.info(f"[Agent API v1] Step 3: 轮询结果...")
         max_attempts = 60
         poll_interval = 2
@@ -359,22 +408,19 @@ async def parse_with_agent_api(file_path: str, filename: str,
                 markdown_url = query_result["data"].get("markdown_url", "")
                 break
             elif state == "failed":
-                raise Exception(f"[Agent API] 解析任务失败: {query_result.get('data', {})}")
+                raise Exception(f"[Agent API] 解析任务失败")
 
         if state != "done":
-            raise Exception(
-                f"[Agent API] 解析超时（已等待 {max_attempts * poll_interval}s），最后状态: {state}"
-            )
+            raise Exception(f"[Agent API] 解析超时，最后状态: {state}")
 
-        # === Step 4: 下载结果 ===
+        # Step 4: 下载结果
         if not markdown_url:
-            raise Exception("[Agent API] 解析完成但未获取到 Markdown URL")
+            raise Exception("[Agent API] 未获取到 Markdown URL")
 
-        logger.info(f"[Agent API v1] Step 4: 下载结果 - {markdown_url[:80]}...")
+        logger.info(f"[Agent API v1] Step 4: 下载结果")
         download_resp = await client.get(markdown_url)
-
         if download_resp.status_code != 200:
-            raise Exception(f"[Agent API] 下载结果失败: HTTP {download_resp.status_code}")
+            raise Exception(f"[Agent API] 下载结果失败")
 
         markdown_content = download_resp.text
         logger.info(f"[Agent API v1] 解析完成! Markdown 大小: {len(markdown_content)} chars")
@@ -383,32 +429,11 @@ async def parse_with_agent_api(file_path: str, filename: str,
             "status": "success",
             "message": f"文档解析成功(MinerU Agent免登录API)",
             "markdown_content": markdown_content,
+            "images": [],
         }
 
 
-# 需要导入 asyncio 用于异步 sleep
 import asyncio
-
-# ============== 兼容旧代码的占位符 ==============
-class MockParser:
-    def parse(self, file_path, **kwargs):
-        return f"模拟解析结果: {file_path}"
-
-PDFParser = MockParser
-ImageParser = MockParser
-MarkdownParser = MockParser
-
-
-def get_parser_for_mimetype(mime_type: str):
-    """根据 MIME 类型获取对应的解析器（兼容旧接口）"""
-    if mime_type == "application/pdf":
-        return PDFParser()
-    elif mime_type in ["image/png", "image/jpeg", "image/jpg", "image/tiff"]:
-        return ImageParser()
-    elif mime_type == "text/markdown":
-        return MarkdownParser()
-    else:
-        raise ValueError(f"不支持的文件类型: {mime_type}")
 
 
 # ============== API 端点 ==============
@@ -418,19 +443,21 @@ async def root():
     """根端点，返回服务状态和配置信息"""
     return {
         "service": "MinerU API Service (Online Edition)",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "mode": _get_current_mode(),
         "token_set": bool(MINERU_TOKEN),
         "pymupdf_available": PYMUPDF_AVAILABLE,
         "force_local_mode": FORCE_LOCAL,
+        "image_dir": str(IMAGE_DIR),
         "strategy_priority": [
             "1. Token 精准 API (v4/extract/task)" if MINERU_TOKEN else "1. [跳过] 未设Token",
             "2. Agent 免登录 API (v1/agent/parse/file)",
-            "3. PyMuPDF 本地降级 (仅PDF)" if PYMUPDF_AVAILABLE else "3. [不可用] PyMuPDF未安装",
+            "3. PyMuPDF 本地降级 (支持图片提取)" if PYMUPDF_AVAILABLE else "3. [不可用] PyMuPDF未安装",
         ],
         "endpoints": {
             "POST /file_parse": "解析上传的文档文件",
             "POST /batch_parse": "批量解析多个文件",
+            "GET /images/{doc_id}/{filename}": "访问提取的图片",
             "GET /health": "健康检查",
         }
     }
@@ -452,8 +479,9 @@ async def health_check():
         "status": "healthy",
         "mode": _get_current_mode(),
         "token_api_ready": bool(MINERU_TOKEN),
-        "agent_api_ready": True,   # Agent API 总是可用（免登录）
+        "agent_api_ready": True,
         "pymupdf_fallback_ready": PYMUPDF_AVAILABLE,
+        "image_extraction_ready": PYMUPDF_AVAILABLE,
     }
 
 
@@ -465,25 +493,27 @@ async def parse_file(
     table_enable: bool = Query(True, description="启用表格识别"),
     return_md: bool = Query(True, description="返回 Markdown"),
     return_middle_json: bool = Query(False, description="返回中间 JSON"),
+    extract_images: bool = Query(True, description="提取图片"),
+    doc_id: str = Query(None, description="文档ID（可选，用于组织图片目录）"),
 ):
     """
     解析上传的文档文件
 
     支持的格式：PDF, PNG, JPG, JPEG, DOCX, PPTX 等
 
-    三级解析策略（按优先级自动选择）：
-    ┌─────────────────────────────────────────────────────┐
-    │  ① Token 精准 API  (需 MINERU_API_TOKEN)           │
-    │     ↓ 失败                                         │
-    │  ② Agent 免登录 API  (无需任何配置)               │
-    │     ↓ 失败                                        │
-    │  ③ PyMuPDF 本地降级  (仅 PDF，毫秒级)              │
-    └─────────────────────────────────────────────────────┘
+    v2.2 新增：
+    - extract_images: 是否从PDF中提取图片
+    - 返回的Markdown中会包含图片链接
+    - 图片可通过 /images/{doc_id}/{filename} 访问
     """
     try:
-        # 验证文件
         if not file or not file.filename:
             raise HTTPException(status_code=400, detail="未提供文件")
+
+        # 生成文档ID
+        if doc_id is None:
+            import time
+            doc_id = hashlib.md5(f"{file.filename}{time.time()}".encode()).hexdigest()[:12]
 
         # 保存到临时文件
         suffix = os.path.splitext(file.filename)[1] or ".bin"
@@ -498,9 +528,7 @@ async def parse_file(
             result = None
             last_error = ""
 
-            # ════════════════════════════════════════
-            # 策略1: Token 精准解析 API（第一优先级）
-            # ════════════════════════════════════════
+            # 策略1: Token 精准解析 API
             if USE_ONLINE_API:
                 logger.info(f"[策略1-Token API] 尝试精准解析: {file.filename}")
                 try:
@@ -512,16 +540,11 @@ async def parse_file(
                         is_ocr=False,
                     )
                     logger.info(f"[策略1-Token API] ✅ 成功!")
-                except httpx.TimeoutException as e:
-                    last_error = f"Token API 超时: {e}"
-                    logger.warning(f"[策略1-Token API] ⏰ {last_error}")
                 except Exception as e:
                     last_error = f"Token API 失败: {e}"
                     logger.warning(f"[策略1-Token API] ❌ {last_error}")
 
-            # ════════════════════════════════════════
-            # 策略2: Agent 免登录 API（第二优先级）
-            # ════════════════════════════════════════
+            # 策略2: Agent 免登录 API
             if result is None and not FORCE_LOCAL:
                 logger.info(f"[策略2-Agent API] 尝试免登录解析: {file.filename}")
                 try:
@@ -533,49 +556,31 @@ async def parse_file(
                         is_ocr=False,
                     )
                     logger.info(f"[策略2-Agent API] ✅ 成功!")
-                except httpx.TimeoutException as e:
-                    last_error = f"Agent API 超时: {e}"
-                    logger.warning(f"[策略2-Agent API] ⏰ {last_error}")
                 except Exception as e:
                     last_error = f"Agent API 失败: {e}"
                     logger.warning(f"[策略2-Agent API] ❌ {last_error}")
 
-            # ════════════════════════════════════════
-            # 策略3: PyMuPDF 本地降级（第三优先级，仅 PDF）
-            # ════════════════════════════════════════
+            # 策略3: PyMuPDF 本地降级（支持图片提取）
             if result is None and file.content_type == "application/pdf" and PYMUPDF_AVAILABLE:
                 logger.info(f"[策略3-PyMuPDF] 本地降级解析: {file.filename}")
                 try:
-                    markdown_content = parse_pdf_with_pymupdf(tmp_path)
+                    pymupdf_result = parse_pdf_with_pymupdf(tmp_path, doc_id, extract_images)
                     result = {
                         "status": "success",
-                        "message": "PDF解析成功(PyMuPDF本地降级)",
-                        "markdown_content": markdown_content,
+                        "message": "PDF解析成功(PyMuPDF本地降级，含图片提取)",
+                        "markdown_content": pymupdf_result["markdown_content"],
+                        "images": pymupdf_result["images"],
                     }
-                    logger.info(f"[策略3-PyMuPDF] ✅ 成功!")
+                    logger.info(f"[策略3-PyMuPDF] ✅ 成功! 提取图片{len(pymupdf_result['images'])}张")
                 except Exception as e:
                     last_error = f"PyMuPDF 也失败了: {e}"
                     logger.error(f"[策略3-PyMuPDF] ❌ {last_error}")
 
-            # ════════════════════════════════════════
             # 所有策略均失败
-            # ════════════════════════════════════════
             if result is None:
-                reasons = []
-                if not MINERU_TOKEN and not FORCE_LOCAL:
-                    reasons.append("Token未设置 → 跳过策略1")
-                if FORCE_LOCAL:
-                    reasons.append("强制本地模式 → 跳过在线API")
-                if file.content_type != "application/pdf":
-                    reasons.append(f"文件类型{file.content_type}不支持PyMuPDF(仅PDF)")
-                if not PYMUPDF_AVAILABLE:
-                    reasons.append("PyMuPDF未安装")
-                if last_error:
-                    reasons.append(f"最后错误: {last_error}")
-
                 raise HTTPException(
                     status_code=503,
-                    detail=f"所有解析方式均不可用。{'; '.join(reasons)}"
+                    detail=f"所有解析方式均不可用。最后错误: {last_error}"
                 )
 
             return ParseResponse(
@@ -583,6 +588,7 @@ async def parse_file(
                 message=result["message"],
                 markdown_content=result.get("markdown_content") if return_md else None,
                 middle_json=None,
+                images=result.get("images"),
             )
 
         finally:
@@ -598,18 +604,11 @@ async def parse_file(
 
 @app.post("/batch_parse")
 async def batch_parse(files: List[UploadFile] = File(...)):
-    """批量解析多个文件（每个文件独立走三级策略）"""
+    """批量解析多个文件"""
     results = []
     for file in files:
         try:
-            response = await parse_file(
-                file=file,
-                lang_list="ch,en",
-                formula_enable=True,
-                table_enable=True,
-                return_md=True,
-                return_middle_json=False,
-            )
+            response = await parse_file(file=file)
             results.append({
                 "filename": file.filename,
                 "status": "success",
@@ -636,7 +635,7 @@ if __name__ == "__main__":
     port = int(os.getenv("MINERU_PORT", "8000"))
 
     print("=" * 60)
-    print("  MinerU API Service v2.1 (官方在线API版)")
+    print("  MinerU API Service v2.2 (官方在线API版 + 图片提取)")
     print("=" * 60)
     if FORCE_LOCAL:
         mode_str = "强制本地PyMuPDF"
@@ -647,8 +646,8 @@ if __name__ == "__main__":
     print(f"  模式: {mode_str}")
     print(f"  Token: {'已配置' if MINERU_TOKEN else '未配置'}")
     print(f"  PyMuPDF: {'可用' if PYMUPDF_AVAILABLE else '不可用'}")
-    print(f"  强制本地: {'是' if FORCE_LOCAL else '否'}")
+    print(f"  图片目录: {IMAGE_DIR}")
     print(f"  监听: {host}:{port}")
     print("=" * 60)
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port)
