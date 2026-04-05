@@ -303,12 +303,45 @@ public class RecursiveRetrievalServiceImpl implements RecursiveRetrievalService 
     }
 
     /**
-     * 截断文本
+     * 截断文本，但保留图片链接
+     * 如果图片链接在截断位置之后，会将其提取并附加到末尾
      */
     private String truncateWithEllipsis(String text, int limit) {
         if (text == null) return "";
         if (text.length() <= limit) return text;
-        return text.substring(0, limit) + "...";
+        
+        // 提取所有图片链接
+        java.util.regex.Pattern imagePattern = java.util.regex.Pattern.compile("!\\[[^\\]]*\\]\\([^)]+\\)");
+        java.util.regex.Matcher matcher = imagePattern.matcher(text);
+        
+        // 收集所有图片链接
+        java.util.List<String> allImages = new java.util.ArrayList<>();
+        while (matcher.find()) {
+            allImages.add(matcher.group());
+        }
+        
+        // 截断文本
+        String truncated = text.substring(0, limit);
+        
+        // 找出被截断的图片链接（在截断位置之后的）
+        java.util.List<String> lostImages = new java.util.ArrayList<>();
+        for (String img : allImages) {
+            if (!truncated.contains(img)) {
+                lostImages.add(img);
+            }
+        }
+        
+        // 如果有图片被截断，附加到末尾
+        if (!lostImages.isEmpty()) {
+            StringBuilder sb = new StringBuilder(truncated);
+            sb.append("...\n\n**相关图片:**\n");
+            for (String img : lostImages) {
+                sb.append(img).append("\n");
+            }
+            return sb.toString();
+        }
+        
+        return truncated + "...";
     }
 
     /**
