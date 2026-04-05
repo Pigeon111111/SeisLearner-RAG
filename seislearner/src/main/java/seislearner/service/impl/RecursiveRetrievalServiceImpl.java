@@ -303,8 +303,12 @@ public class RecursiveRetrievalServiceImpl implements RecursiveRetrievalService 
     }
 
     /**
-     * 截断文本，但保留图片链接
-     * 如果图片链接在截断位置之后，会将其提取并附加到末尾
+     * 截断文本，智能处理图片链接
+     * 
+     * 多模态RAG最佳实践：
+     * 1. 优先保留文本内容
+     * 2. 限制图片数量，避免上下文被图片链接占满
+     * 3. 图片链接放在末尾，使用简洁格式
      */
     private String truncateWithEllipsis(String text, int limit) {
         if (text == null) return "";
@@ -314,34 +318,82 @@ public class RecursiveRetrievalServiceImpl implements RecursiveRetrievalService 
         java.util.regex.Pattern imagePattern = java.util.regex.Pattern.compile("!\\[[^\\]]*\\]\\([^)]+\\)");
         java.util.regex.Matcher matcher = imagePattern.matcher(text);
         
-        // 收集所有图片链接
-        java.util.List<String> allImages = new java.util.ArrayList<>();
+        // 收集所有图片链接及其位置
+        java.util.List<int[]> imagePositions = new java.util.ArrayList<>();
+        java.util.List<String> imageLinks = new java.util.ArrayList<>();
         while (matcher.find()) {
-            allImages.add(matcher.group());
+            imagePositions.add(new int[]{matcher.start(), matcher.end()});
+            imageLinks.add(matcher.group());
         }
         
-        // 截断文本
-        String truncated = text.substring(0, limit);
+        // 如果没有图片，简单截断
+        if (imagePositions.isEmpty()) {
+            return text.substring(0, limit) + "...";
+        }
         
-        // 找出被截断的图片链接（在截断位置之后的）
-        java.util.List<String> lostImages = new java.util.ArrayList<>();
-        for (String img : allImages) {
-            if (!truncated.contains(img)) {
-                lostImages.add(img);
+        // 计算纯文本长度（不含图片链接）
+        int totalImageLength = imagePositions.stream()
+            .mapToInt(pos -> pos[1] - pos[0])
+            .sum();
+        int pureTextLength = text.length() - totalImageLength;
+        
+        // 如果纯文本已经很长，只保留前2张图片
+        int maxImages = 2;
+        int reservedImageSpace = 0;
+        
+        // 截断文本，预留图片空间
+        int effectiveLimit = limit;
+        if (imageLinks.size() > maxImages) {
+            // 只保留前maxImages张图片的空间
+            for (int i = 0; i < maxImages && i < imageLinks.size(); i++) {
+                reservedImageSpace += imageLinks.get(i).length() + 1; // +1 for newline
             }
+            effectiveLimit = limit - reservedImageSpace - 50; // 额外预留50字符给省略号和标记
         }
         
-        // 如果有图片被截断，附加到末尾
-        if (!lostImages.isEmpty()) {
-            StringBuilder sb = new StringBuilder(truncated);
-            sb.append("...\n\n**相关图片:**\n");
-            for (String img : lostImages) {
-                sb.append(img).append("\n");
+        // 构建截断后的内容
+        StringBuilder result = new StringBuilder();
+        int lastEnd = 0;
+        int imageCount = 0;
+        
+        for (int i = 0; i < imagePositions.size() && imageCount < maxImages; i++) {
+            int[] pos = imagePositions.get(i);
+            
+            // 添加图片前的文本
+            if (pos[0] > lastEnd) {
+                String textBefore = text.substring(lastEnd, pos[0]);
+                if (result.length() + textBefore.length() > effectiveLimit) {
+                    // 剩余空间不够，截断文本
+                    int remaining = effectiveLimit - result.length();
+                    if (remaining > 0) {
+                        result.append(text.substring(lastEnd, lastEnd + remaining));
+                    }
+                    break;
+                }
+                result.append(textBefore);
             }
-            return sb.toString();
+            
+            // 添加图片链接
+            result.append(imageLinks.get(i));
+            lastEnd = pos[1];
+            imageCount++;
         }
         
-        return truncated + "...";
+        // 添加剩余文本
+        if (lastEnd < text.length() && result.length() < effectiveLimit) {
+            int remaining = effectiveLimit - result.length();
+            int endPos = Math.min(lastEnd + remaining, text.length());
+            result.append(text.substring(lastEnd, endPos));
+        }
+        
+        // 如果还有更多图片，添加图片数量提示
+        if (imageLinks.size() > maxImages) {
+            result.append("...\n[另有").append(imageLinks.size() - maxImages).append("张图片]");
+        } else if (result.length() < text.length()) {
+            result.append("...");
+        }
+        
+        return result.toString();
     }
 
     /**
