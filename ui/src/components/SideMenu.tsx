@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { RobotOutlined } from "@ant-design/icons";
 import { Tabs, type TabsProps } from "antd";
 import { useNavigate } from "react-router-dom";
@@ -27,9 +27,6 @@ const SideMenu: React.FC<SideMenuProps> = () => {
     import("../api/api.ts").AgentVO | null
   >(null);
 
-  /**
-   * 添加知识库模态框状态
-   */
   const [isAddKnowledgeBaseModalOpen, setIsAddKnowledgeBaseModalOpen] =
     useState(false);
   const toggleAddKnowledgeBaseModal = () => {
@@ -47,7 +44,6 @@ const SideMenu: React.FC<SideMenuProps> = () => {
 
   const { knowledgeBases, createKnowledgeBaseHandle } = useKnowledgeBases();
 
-  // 处理标签页切换
   const handleTabChange = (key: string) => {
     setActiveKey(key);
   };
@@ -55,7 +51,7 @@ const SideMenu: React.FC<SideMenuProps> = () => {
   const items: TabsProps["items"] = [
     {
       key: "agent",
-      label: <span className="select-none">智能体助手</span>,
+      label: <span className="select-none text-sm">智能体助手</span>,
       children: (
         <AgentTabContent
           agents={agents}
@@ -71,12 +67,12 @@ const SideMenu: React.FC<SideMenuProps> = () => {
     },
     {
       key: "chat",
-      label: <span className="select-none">聊天记录</span>,
+      label: <span className="select-none text-sm">聊天记录</span>,
       children: <ChatTabContent />,
     },
     {
       key: "knowledgeBase",
-      label: <span className="select-none">知识库</span>,
+      label: <span className="select-none text-sm">知识库</span>,
       children: (
         <KnowledgeBaseTabContent
           knowledgeBases={knowledgeBases}
@@ -90,21 +86,21 @@ const SideMenu: React.FC<SideMenuProps> = () => {
   ];
 
   return (
-    <div className="px-4 flex flex-col h-full">
-      <div className="h-14 w-full flex items-center border-b border-gray-200">
-        <div className="flex items-center gap-2.5 mx-4">
-          <RobotOutlined className="text-xl text-indigo-600" />
-          <div className="text-lg font-semibold select-none text-gray-900">
+    <div className="flex flex-col h-full">
+      <div className="h-12 w-full flex items-center border-b border-gray-200 px-3">
+        <div className="flex items-center gap-2">
+          <RobotOutlined className="text-lg text-indigo-600" />
+          <div className="text-base font-semibold select-none text-gray-900">
             seislearner
           </div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <Tabs
           activeKey={activeKey}
           onChange={handleTabChange}
           items={items}
-          // className="h-full flex flex-col [&_.ant-tabs-content-holder]:flex-1 [&_.ant-tabs-content-holder]:min-h-0 [&_.ant-tabs-content]:h-full [&_.ant-tabs-tabpane]:h-full"
+          className="h-full [&_.ant-tabs-nav]:!mb-0"
         />
       </div>
       <AddAgentModal

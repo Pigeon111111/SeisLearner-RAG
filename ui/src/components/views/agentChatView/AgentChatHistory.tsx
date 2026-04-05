@@ -17,13 +17,12 @@ interface AgentChatHistoryProps {
   agentStatusType?: SseMessageType;
 }
 
-// 工具调用展示组件（简化版，用于 assistant 消息内）
 const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
   let parsedArgs: Record<string, unknown> = {};
   try {
     parsedArgs = JSON.parse(toolCall.arguments) as Record<string, unknown>;
   } catch {
-    // 如果解析失败，使用原始字符串
+    // 解析失败使用原始字符串
   }
 
   const argCount = Object.keys(parsedArgs).length;
@@ -45,13 +44,12 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
   );
 };
 
-// 解析 KnowledgeTool 检索结果，提取结构化引用信息
 interface ParsedCitation {
   index: number;
-  source: string;       // 来源文件名
-  relevance: string;    // 相关度
-  position?: string;    // 位置信息
-  content: string;      // 内容
+  source: string;
+  relevance: string;
+  position?: string;
+  content: string;
 }
 
 function parseRetrievalResult(rawText: string): {
@@ -59,7 +57,6 @@ function parseRetrievalResult(rawText: string): {
   citations: ParsedCitation[];
   tail: string;
 } | null {
-  // 匹配检索摘要行
   const summaryMatch = rawText.match(/检索完成[^\n]*/);
   if (!summaryMatch) return null;
 
@@ -67,7 +64,6 @@ function parseRetrievalResult(rawText: string): {
   const citations: ParsedCitation[] = [];
   let remaining = rawText.slice(summaryMatch.index! + summaryMatch[0].length);
 
-  // 匹配每条引用块：【引用 N】(来源文件名, 相关度 XX%)
   const citationRegex = /【引用\s*(\d+)】[（(]([^,，)]+)[,，]\s*相关度\s*([\d.]+%)[）)]\n([\s\S]*?)(?=【引用\s*\d+】[（(]|【回答要求】|$)/g;
 
   let match: RegExpExecArray | null;
@@ -77,7 +73,6 @@ function parseRetrievalResult(rawText: string): {
     const relevance = match[3].trim();
     let body = match[4].trim();
 
-    // 提取位置行
     let position: string | undefined;
     const posMatch = body.match(/位置[：:]\s*(.+)/);
     if (posMatch) {
@@ -88,27 +83,22 @@ function parseRetrievalResult(rawText: string): {
     citations.push({ index, source, relevance, position, content: body });
   }
 
-  // 提取尾部回答要求
   const tailMatch = remaining.match(/【回答要求】[\s\S]*/);
   const tail = tailMatch ? tailMatch[0].trim() : "";
 
   return citations.length > 0 ? { summary, citations, tail } : null;
 }
 
-// 工具响应展示组件（可折叠，支持结构化展示检索结果）
 const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
   toolResponse,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
-  // 原始响应文本
   const rawText = toolResponse.responseData || "";
 
-  // 尝试解析为结构化检索结果
   const isKnowledgeTool = toolResponse.name === "KnowledgeTool";
   const parsed = isKnowledgeTool ? parseRetrievalResult(rawText) : null;
 
-  // 预览文本
   const previewText = parsed
     ? `${parsed.summary} · ${parsed.citations.length}条引用`
     : rawText.length > 150
@@ -135,14 +125,12 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
         <div className="ml-5 mt-1.5 rounded border border-gray-200 max-h-96 overflow-y-auto">
           {parsed ? (
             <div className="divide-y divide-gray-100">
-              {/* 摘要行 */}
               <div className="px-3 py-1.5 bg-blue-50 text-blue-700 font-medium">
                 {parsed.summary}
               </div>
-              {/* 引用列表 */}
               {parsed.citations.map((cite) => (
                 <div key={cite.index} className="px-3 py-2">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold">
                       {cite.index}
                     </span>
@@ -163,7 +151,6 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
                   </div>
                 </div>
               ))}
-              {/* 尾部提示（折叠显示） */}
               {parsed.tail && (
                 <div className="px-3 py-1.5 bg-gray-50 text-gray-400 text-[10px] italic">
                   系统提示已发送给AI模型
@@ -171,7 +158,6 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
               )}
             </div>
           ) : (
-            /* 非检索结果：直接显示原始文本 */
             <div className="p-2 bg-gray-50 whitespace-pre-wrap break-words text-gray-600">
               {rawText}
             </div>
@@ -182,22 +168,52 @@ const ToolResponseDisplay: React.FC<{ toolResponse: ToolResponse }> = ({
   );
 };
 
+// 公式预处理：将 LaTeX 公式转换为 Markdown 兼容格式
+function preprocessLatex(content: string): string {
+  // 处理块级公式 $$...$$
+  let processed = content.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula) => {
+    const cleaned = formula.trim();
+    return `\n$$${cleaned}$$\n`;
+  });
+  
+  // 处理行内公式 $...$（非贪婪，避免匹配金额等）
+  processed = processed.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (_match, formula) => {
+    const cleaned = formula.trim();
+    // 只处理看起来像公式的（包含字母、运算符等）
+    if (/[a-zA-Z\\^_{}[\]()]/.test(cleaned)) {
+      return `$${cleaned}$`;
+    }
+    return `$${cleaned}$`;
+  });
+  
+  return processed;
+}
+
+// 图片路径处理：将相对路径转换为可访问的URL
+function processImagePaths(content: string): string {
+  // 处理 Markdown 图片语法 ![alt](path)
+  return content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, path) => {
+    // 如果是相对路径且不是 URL，添加 API 前缀
+    if (!path.startsWith('http') && !path.startsWith('data:')) {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+      const fullPath = path.startsWith('/') ? `${apiBase}${path}` : `${apiBase}/${path}`;
+      return `![${alt}](${fullPath})`;
+    }
+    return match;
+  });
+}
+
 const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
   messages,
   displayAgentStatus = false,
   agentStatusText = "",
   agentStatusType,
 }) => {
-  // 滚动容器引用
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // 是否允许自动滚动（用户是否接近底部）
   const [isNearBottom, setIsNearBottom] = useState(true);
-  // 容错阈值（像素）
   const SCROLL_THRESHOLD = 20;
-  // 上一次消息数量，用于检测新消息
   const prevMessagesLengthRef = useRef(messages.length);
 
-  // 检查是否接近底部
   const checkIfNearBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return false;
@@ -207,12 +223,10 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
     return distanceFromBottom <= SCROLL_THRESHOLD;
   }, []);
 
-  // 滚动到底部
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // 使用 requestAnimationFrame 确保 DOM 更新完成后再滚动
     requestAnimationFrame(() => {
       if (container) {
         container.scrollTop = container.scrollHeight;
@@ -220,18 +234,15 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
     });
   }, []);
 
-  // 处理滚动事件，实时更新是否接近底部的状态
   const handleScroll = useCallback(() => {
     const nearBottom = checkIfNearBottom();
     setIsNearBottom(nearBottom);
   }, [checkIfNearBottom]);
 
-  // 监听滚动事件
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // 初始化时检查是否在底部（延迟执行以避免同步 setState）
     const initTimer = setTimeout(() => {
       setIsNearBottom(checkIfNearBottom());
     }, 0);
@@ -244,25 +255,21 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
     };
   }, [handleScroll, checkIfNearBottom]);
 
-  // 监听消息变化，决定是否自动滚动
   useEffect(() => {
     const hasNewMessage = messages.length > prevMessagesLengthRef.current;
     prevMessagesLengthRef.current = messages.length;
 
-    // 如果有新消息且用户接近底部，则自动滚动
     if (hasNewMessage && isNearBottom) {
       scrollToBottom();
     }
   }, [messages, isNearBottom, scrollToBottom]);
 
-  // 当 displayAgentStatus 变化时，如果用户接近底部，也自动滚动
   useEffect(() => {
     if (displayAgentStatus && isNearBottom) {
       scrollToBottom();
     }
   }, [displayAgentStatus, isNearBottom, scrollToBottom]);
 
-  // 获取状态标签
   const getStatusLabel = () => {
     switch (agentStatusType) {
       case "AI_PLANNING":
@@ -276,20 +283,25 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
     }
   };
 
+  // 处理消息内容，支持公式和图片
+  const processContent = (content: string): string => {
+    let processed = preprocessLatex(content);
+    processed = processImagePaths(processed);
+    return processed;
+  };
+
   return (
     <div 
       ref={scrollContainerRef}
-      className="flex-1 px-4 sm:px-6 lg:px-16 pt-4 overflow-y-scroll"
+      className="flex-1 px-3 sm:px-4 md:px-6 lg:px-8 xl:px-12 pt-4 overflow-y-scroll"
     >
       {messages.map((message) => {
         return (
           <div className="mb-4" key={message.id}>
-            {/* Assistant 消息 */}
             {message.role === "assistant" && (
               <Bubble
                 content={
-                  <div className="w-full">
-                    {/* 工具调用展示 */}
+                  <div className="w-full x-md-content">
                     {message.metadata?.toolCalls &&
                       message.metadata.toolCalls.length > 0 && (
                         <div className="mb-2 flex flex-wrap gap-2">
@@ -298,13 +310,27 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
                           ))}
                         </div>
                       )}
-                    {/* 消息内容 */}
                     {message.content && (
                       <div>
                         <XMarkdown
                           streaming={{ enableAnimation: false, hasNextChunk: true }}
+                          components={{
+                            // 自定义图片渲染
+                            img: ({ src, alt, ...props }: { src?: string; alt?: string; [key: string]: unknown }) => (
+                              <img 
+                                src={src || ''} 
+                                alt={alt || ''} 
+                                className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+                                loading="lazy"
+                                onClick={() => {
+                                  if (src) window.open(src, '_blank');
+                                }}
+                                {...props as React.ImgHTMLAttributes<HTMLImageElement>}
+                              />
+                            ),
+                          }}
                         >
-                          {message.content}
+                          {processContent(message.content)}
                         </XMarkdown>
                       </div>
                     )}
@@ -314,21 +340,18 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
               />
             )}
 
-            {/* Tool 消息 - 简洁展示，不使用气泡 */}
             {message.role === "tool" && message.metadata?.toolResponse && (
               <div className="flex justify-start">
-                <div className="max-w-[85%] sm:max-w-[85%] lg:max-w-[85%]">
+                <div className="max-w-[90%]">
                   <ToolResponseDisplay toolResponse={message.metadata.toolResponse} />
                 </div>
               </div>
             )}
 
-            {/* User 消息 */}
             {message.role === "user" && (
               <Bubble content={message.content} placement="end" />
             )}
 
-            {/* System 消息 */}
             {message.role === "system" && (
               <div className="flex justify-center">
                 <div className="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full flex items-center gap-1">
@@ -362,7 +385,7 @@ const AgentChatHistory: React.FC<AgentChatHistoryProps> = ({
                       filter: "brightness(1.3)",
                     }}
                   >
-                    ✨ {getStatusLabel()}
+                    {getStatusLabel()}
                   </span>
                   <span className="text-gray-400">·</span>
                   <span className="text-gray-600">{agentStatusText}</span>

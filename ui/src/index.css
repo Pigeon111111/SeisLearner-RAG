@@ -24,10 +24,182 @@
 
 /* 隐藏滚动条但保持滚动功能 */
 .scrollbar-hide {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .scrollbar-hide::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  display: none;
+}
+
+/* 响应式布局优化 */
+@media (max-width: 1024px) {
+  .ant-tabs-tab {
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .ant-tabs-tab {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+  }
+  
+  .ant-card {
+    font-size: 13px;
+  }
+  
+  .ant-table {
+    font-size: 12px;
+  }
+  
+  .ant-btn {
+    font-size: 13px;
+  }
+}
+
+/* Markdown 内容样式 */
+.x-md-content {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+.x-md-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.x-md-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.x-md-content code {
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.x-md-content pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+.x-md-content table {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+  border-collapse: collapse;
+}
+
+.x-md-content th,
+.x-md-content td {
+  border: 1px solid #e5e7eb;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.x-md-content th {
+  background-color: #f9fafb;
+  font-weight: 600;
+}
+
+.x-md-content blockquote {
+  border-left: 4px solid #e5e7eb;
+  padding-left: 16px;
+  margin: 8px 0;
+  color: #6b7280;
+}
+
+.x-md-content ul,
+.x-md-content ol {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.x-md-content li {
+  margin: 4px 0;
+}
+
+.x-md-content h1,
+.x-md-content h2,
+.x-md-content h3,
+.x-md-content h4,
+.x-md-content h5,
+.x-md-content h6 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.x-md-content h1 { font-size: 1.5em; }
+.x-md-content h2 { font-size: 1.3em; }
+.x-md-content h3 { font-size: 1.15em; }
+.x-md-content h4 { font-size: 1em; }
+
+.x-md-content p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.x-md-content a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.x-md-content a:hover {
+  text-decoration: underline;
+}
+
+/* KaTeX 公式样式 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 0;
+  max-width: 100%;
+}
+
+.katex {
+  font-size: 1.1em;
+}
+
+/* 行内公式 */
+.katex-inline {
+  display: inline;
+}
+
+/* 响应式气泡消息 */
+.ant-x-bubble {
+  max-width: calc(100vw - 32px) !important;
+}
+
+@media (min-width: 640px) {
+  .ant-x-bubble {
+    max-width: 85% !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .ant-x-bubble {
+    max-width: 70% !important;
+  }
+}
+
+/* Sender 输入框响应式 */
+.ant-x-sender {
+  max-width: 100% !important;
+}
+
+.ant-x-sender-textarea {
+  min-height: 44px !important;
+  max-height: 200px !important;
 }

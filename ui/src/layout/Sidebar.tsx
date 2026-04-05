@@ -6,9 +6,9 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ children }) => {
   return (
-    <div className="h-full bg-slate-50 shrink-0 w-72 lg:w-80 overflow-hidden">
+    <aside className="h-full bg-slate-50 shrink-0 w-full lg:w-72 xl:w-80 overflow-hidden border-b lg:border-b-0 lg:border-r border-gray-200">
       {children}
-    </div>
+    </aside>
   );
 };
 
