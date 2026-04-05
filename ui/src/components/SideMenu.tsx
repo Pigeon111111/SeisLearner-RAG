@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { RobotOutlined } from "@ant-design/icons";
+import { RobotOutlined, BarChartOutlined } from "@ant-design/icons";
 import { Tabs, type TabsProps } from "antd";
 import { useNavigate } from "react-router-dom";
 import AgentTabContent from "./tabs/AgentTabContent.tsx";
@@ -39,6 +39,7 @@ const SideMenu: React.FC<SideMenuProps> = () => {
     if (location.pathname.startsWith("/agent")) return "agent";
     if (location.pathname.startsWith("/knowledge-base")) return "knowledgeBase";
     if (location.pathname.startsWith("/chat")) return "chat";
+    if (location.pathname.startsWith("/evaluation")) return "evaluation";
     return "agent";
   });
 
@@ -46,6 +47,9 @@ const SideMenu: React.FC<SideMenuProps> = () => {
 
   const handleTabChange = (key: string) => {
     setActiveKey(key);
+    if (key === "evaluation") {
+      navigate("/evaluation");
+    }
   };
 
   const items: TabsProps["items"] = [
@@ -83,11 +87,29 @@ const SideMenu: React.FC<SideMenuProps> = () => {
         />
       ),
     },
+    {
+      key: "evaluation",
+      label: <span className="select-none text-sm">评估系统</span>,
+      children: (
+        <div className="p-4">
+          <div 
+            className="flex items-center gap-3 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg cursor-pointer hover:from-indigo-100 hover:to-purple-100 transition-colors"
+            onClick={() => navigate("/evaluation")}
+          >
+            <BarChartOutlined className="text-2xl text-indigo-600" />
+            <div>
+              <div className="font-medium text-gray-800">RAGAS 评估系统</div>
+              <div className="text-xs text-gray-500">评估检索和生成质量</div>
+            </div>
+          </div>
+        </div>
+      ),
+    },
   ];
 
   return (
     <div className="flex flex-col h-full">
-      <div className="h-12 w-full flex items-center border-b border-gray-200 px-3">
+      <div className="h-12 w-full flex items-center border-b border-gray-200 px-3 shrink-0">
         <div className="flex items-center gap-2">
           <RobotOutlined className="text-lg text-indigo-600" />
           <div className="text-base font-semibold select-none text-gray-900">

@@ -7,6 +7,7 @@ import SideMenu from "./SideMenu.tsx";
 import Content from "../layout/Content.tsx";
 import AgentChatView from "./views/AgentChatView.tsx";
 import KnowledgeBaseView from "./views/KnowledgeBaseView.tsx";
+import EvaluationView from "./views/EvaluationView.tsx";
 
 export default function SeisLearnerLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -26,7 +27,7 @@ export default function SeisLearnerLayout() {
         fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        h-full lg:h-auto
+        h-screen lg:h-full
       `}>
         <Sidebar>
           {/* 移动端关闭按钮 */}
@@ -62,6 +63,7 @@ export default function SeisLearnerLayout() {
             path="/knowledge-base/:knowledgeBaseId"
             element={<KnowledgeBaseView />}
           />
+          <Route path="/evaluation" element={<EvaluationView />} />
         </Routes>
       </Content>
     </Layout>
