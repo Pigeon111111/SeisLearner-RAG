@@ -26,11 +26,12 @@ export default function SeisLearnerLayout() {
         fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        h-full lg:h-auto
       `}>
         <Sidebar>
           {/* 移动端关闭按钮 */}
           <button
-            className="absolute top-3 right-3 lg:hidden p-1.5 rounded-md hover:bg-gray-200 transition-colors"
+            className="absolute top-3 right-3 lg:hidden p-1.5 rounded-md hover:bg-gray-200 transition-colors z-10"
             onClick={() => setSidebarOpen(false)}
           >
             <CloseOutlined className="text-gray-500" />
@@ -41,7 +42,7 @@ export default function SeisLearnerLayout() {
       
       <Content>
         {/* 移动端菜单按钮 */}
-        <div className="lg:hidden h-12 flex items-center px-3 border-b border-gray-200 bg-white">
+        <div className="lg:hidden h-12 flex items-center px-3 border-b border-gray-200 bg-white shrink-0">
           <button
             className="p-2 rounded-md hover:bg-gray-100 transition-colors"
             onClick={() => setSidebarOpen(true)}
