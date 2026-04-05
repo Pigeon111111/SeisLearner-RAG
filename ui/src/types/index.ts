@@ -74,3 +74,65 @@ export interface SseMessage {
   payload: SseMessagePayload;
   metadata: SseMessageMetadata;
 }
+
+// Agent 相关类型
+export interface RetrievalOptions {
+  enableHybridSearch: boolean;
+  enableRecursiveSearch: boolean;
+  enableRerank: boolean;
+  topK: number;
+  denseWeight: number;
+  sparseWeight: number;
+  maxRecursionDepth: number;
+  confidenceThreshold: number;
+  similarityThreshold: number;
+}
+
+export interface ChatOptions {
+  temperature: number;
+  topP: number;
+  messageLength: number;
+  retrievalOptions: RetrievalOptions;
+}
+
+export interface AgentVO {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model: string;
+  allowedTools: string[];
+  allowedKbs: string[];
+  chatOptions: ChatOptions;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAgentRequest {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model: string;
+  allowedTools: string[];
+  allowedKbs: string[];
+  chatOptions: ChatOptions;
+}
+
+export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptions = {
+  enableHybridSearch: true,
+  enableRecursiveSearch: true,
+  enableRerank: true,
+  topK: 5,
+  denseWeight: 0.7,
+  sparseWeight: 0.3,
+  maxRecursionDepth: 4,
+  confidenceThreshold: 0.5,
+  similarityThreshold: 0.3,
+};
+
+export const DEFAULT_CHAT_OPTIONS: ChatOptions = {
+  temperature: 0.7,
+  topP: 1.0,
+  messageLength: 10,
+  retrievalOptions: DEFAULT_RETRIEVAL_OPTIONS,
+};
