@@ -99,6 +99,50 @@ class ParseResponse(BaseModel):
 
 # ============== 图片提取函数 ==============
 
+# 全局已见过的图片hash集合（用于跨文档去重）
+_seen_image_hashes = set()
+
+def is_blank_or_solid_image(image_bytes: bytes, threshold: float = 0.95) -> bool:
+    """
+    检测图片是否为空白或纯色图片
+    
+    Args:
+        image_bytes: 图片字节数据
+        threshold: 颜色一致性阈值，0.95表示95%像素相同颜色则认为是纯色
+        
+    Returns:
+        bool: True表示是空白/纯色图片
+    """
+    try:
+        from PIL import Image
+        import io
+        
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # 转换为RGB模式
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # 缩小图片以加快处理速度
+        img.thumbnail((100, 100))
+        
+        pixels = list(img.getdata())
+        if not pixels:
+            return True
+        
+        # 统计最常见的颜色
+        from collections import Counter
+        color_counts = Counter(pixels)
+        most_common_color, most_common_count = color_counts.most_common(1)[0]
+        
+        # 如果最常见的颜色占比超过阈值，认为是纯色/空白图片
+        ratio = most_common_count / len(pixels)
+        return ratio >= threshold
+        
+    except Exception as e:
+        logger.debug(f"检测图片颜色失败: {e}")
+        return False
+
 def extract_images_from_pdf(pdf_path: str, doc_id: str) -> Tuple[List[dict], dict]:
     """
     从PDF中提取所有图片并保存到本地
@@ -110,9 +154,14 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> Tuple[List[dict], dic
     Returns:
         Tuple[List[dict], dict]: (图片信息列表, 图片路径映射 {page_num: [image_paths]})
     """
+    global _seen_image_hashes
+    
     doc = fitz.open(pdf_path)
     images_info = []
     image_map = {}  # page_num -> [image_paths]
+    
+    # 本文档已见过的hash（避免同一文档内重复）
+    doc_seen_hashes = set()
     
     # 为该文档创建独立目录
     doc_image_dir = IMAGE_DIR / doc_id
@@ -135,11 +184,37 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> Tuple[List[dict], dic
                 image_ext = base_image["ext"]
                 
                 # 过滤太小的图片（可能是图标、装饰元素）
-                if len(image_bytes) < 1024:  # 小于1KB
+                if len(image_bytes) < 5000:  # 小于5KB
                     continue
                 
-                # 生成唯一文件名
+                # 过滤太大的图片（可能是整页扫描）
+                if len(image_bytes) > 10 * 1024 * 1024:  # 大于10MB
+                    continue
+                
+                # 计算图片hash
                 image_hash = hashlib.md5(image_bytes).hexdigest()[:12]
+                
+                # 跳过全局已见过的重复图片（背景图片等）
+                if image_hash in _seen_image_hashes:
+                    logger.debug(f"跳过重复图片(全局): hash={image_hash}")
+                    continue
+                
+                # 跳过文档内重复的图片
+                if image_hash in doc_seen_hashes:
+                    logger.debug(f"跳过重复图片(文档内): hash={image_hash}")
+                    continue
+                
+                # 检测空白/纯色图片
+                if is_blank_or_solid_image(image_bytes):
+                    logger.debug(f"跳过空白/纯色图片: hash={image_hash}")
+                    _seen_image_hashes.add(image_hash)  # 记录到全局
+                    continue
+                
+                # 记录hash
+                _seen_image_hashes.add(image_hash)
+                doc_seen_hashes.add(image_hash)
+                
+                # 生成唯一文件名
                 image_filename = f"page{page_num + 1}_img{img_index + 1}_{image_hash}.{image_ext}"
                 image_path = doc_image_dir / image_filename
                 
@@ -156,11 +231,12 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> Tuple[List[dict], dic
                     "index": img_index + 1,
                     "size": len(image_bytes),
                     "ext": image_ext,
+                    "hash": image_hash,
                 }
                 images_info.append(image_info)
                 page_images.append(image_url)
                 
-                logger.debug(f"提取图片: page={page_num + 1}, index={img_index + 1}, size={len(image_bytes)}")
+                logger.debug(f"提取图片: page={page_num + 1}, index={img_index + 1}, size={len(image_bytes)}, hash={image_hash}")
                 
             except Exception as e:
                 logger.warning(f"提取图片失败: page={page_num + 1}, index={img_index + 1}, error={e}")
@@ -171,7 +247,7 @@ def extract_images_from_pdf(pdf_path: str, doc_id: str) -> Tuple[List[dict], dic
     
     doc.close()
     
-    logger.info(f"从PDF提取图片完成: doc_id={doc_id}, 总图片数={len(images_info)}")
+    logger.info(f"从PDF提取图片完成: doc_id={doc_id}, 有效图片数={len(images_info)}, 过滤重复/空白={len(doc_seen_hashes) - len(images_info)}")
     return images_info, image_map
 
 
